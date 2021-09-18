@@ -4,10 +4,15 @@ include(${LIBHERMIT_ROOT_DIR}/cmake/HermitCore-Application.cmake)
 
 project(libhermit-kata-agent C)
 
-if("${TARGET_ARCH}" STREQUAL "x86_64-hermit")
+set (WAMR_BUILD_LIBC_BUILTIN 1)
+set (WAMR_BUILD_LIBC_WASI 1)
+
 include (${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib ${WAMR_RUNTIME_LIB_SOURCE})
 
-add_executable(kata-agent main.c)
+include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)
+
+add_executable(kata-agent main.c wamr.c ${UNCOMMON_SHARED_SOURCE})
 target_compile_options(kata-agent PRIVATE -g)
-endif()
+
+target_link_libraries (kata-agent vmlib ${LLVM_AVAILABLE_LIBS} ${UV_A_LIBS} -lpthread)

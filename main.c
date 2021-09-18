@@ -7,5 +7,5 @@ main(int argc, char **argv)
 {
     printf("Hello Kata libHermit WAMR!\n");
 
-    return 0;
+    return wamr();
 }
