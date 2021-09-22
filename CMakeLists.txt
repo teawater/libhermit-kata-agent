@@ -6,6 +6,7 @@ project(libhermit-kata-agent C)
 
 set (WAMR_BUILD_LIBC_BUILTIN 1)
 set (WAMR_BUILD_LIBC_WASI 1)
+set (WAMR_BUILD_LIBC_EMCC 1)
 
 include (${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib ${WAMR_RUNTIME_LIB_SOURCE})

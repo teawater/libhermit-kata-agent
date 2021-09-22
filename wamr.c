@@ -72,7 +72,7 @@ read_file_to_buffer(const char *filename, uint32 *ret_size)
     return buffer;
 }
 
-int wamr(void)
+int wamr(char *file)
 {
     char error_buf[128] = { 0 };
     uint8 *wasm_file_buf = NULL;
@@ -89,7 +89,7 @@ int wamr(void)
     }
 
     if (!(wasm_file_buf =
-              (uint8 *)read_file_to_buffer(WASM_FILE, &wasm_file_size)))
+              (uint8 *)read_file_to_buffer(file, &wasm_file_size)))
     {
         printf("bh_read_file_to_buffer failed\n");
         goto error;
