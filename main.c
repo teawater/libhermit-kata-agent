@@ -54,7 +54,7 @@ static void logger(const char *logbuffer)
 
 static void logger(const char *logbuffer)
 {
-	printf("task: %d: %s\n", getpid(), logbuffer);
+	printf("%s\n", logbuffer);
 }
 
 pthread_t sandbox_thread;
@@ -67,6 +67,7 @@ void* sandbox_func(void* arg)
 	logger("Sandbox start");
 
 	read(socketfd, buf, 1);
+	close(socketfd);
 
 	logger("Sandbox stop");
 
@@ -83,6 +84,7 @@ void* container_func(void* arg)
 	logger("Container start");
 
 	read(socketfd, buf, 1);
+	close(socketfd);
 
 	logger("Container stop");
 }
@@ -125,7 +127,7 @@ main(int argc, char **argv)
 	while(1) {
 		int ret;
 
-		printf("Wait client\n");
+		logger("wait client");
 		socketfd = accept(listenfd, NULL, NULL);
 		if (socketfd < 0) {
 			logger("accept failed");
