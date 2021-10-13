@@ -14,8 +14,6 @@
 #include "wasm_runtime_common.h"
 #include "wasm_runtime.h"
 
-#define WASM_FILE   "/home/teawater/hello.wasm"
-
 char*
 read_file_to_buffer(const char *filename, uint32 *ret_size)
 {

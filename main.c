@@ -11,6 +11,8 @@
 #include <pthread.h>
 
 #define CTL_PORT    18082
+
+#if 0
 #define LOG_PATH    "/var/log/libhermit-kata-agent.log"
 
 static ssize_t write_all(int fd, const char* buf, size_t len)
@@ -30,7 +32,7 @@ out:
 	return r;
 }
 
-#if 0
+
 static void logger(const char *logbuffer)
 {
 	int fd;
@@ -52,50 +54,59 @@ static void logger(const char *logbuffer)
 }
 #endif
 
-static void logger(const char *logbuffer)
+#define va_list __builtin_va_list
+#define va_start __builtin_va_start
+#define va_arg __builtin_va_arg
+#define va_end __builtin_va_end
+
+static void logger(const char *fmt, ...)
 {
-	printf("%s\n", logbuffer);
+	int real_fmt_max = strlen(fmt) + 50;
+	char real_fmt[real_fmt_max];
+	va_list ap;
+
+	real_fmt[0] = '\0';
+	strcat(real_fmt, fmt);
+	strcat(real_fmt, "\n");
+	va_start(ap, real_fmt);
+	vprintf(real_fmt, ap);
+	va_end(ap);
 }
 
-pthread_t sandbox_thread;
-
-void* sandbox_func(void* arg)
+int
+os_printf(const char *format, ...)
 {
-	int socketfd = (int)arg;
-	char buf[1];
+    int ret = 0;
+    va_list ap;
 
-	logger("Sandbox start");
+    va_start(ap, format);
+    ret += vprintf(format, ap);
+    va_end(ap);
 
-	read(socketfd, buf, 1);
-	close(socketfd);
-
-	logger("Sandbox stop");
-
-	exit(0);
+    return ret;
 }
 
 pthread_t container_threads[128];
 
 void* container_func(void* arg)
 {
-	int socketfd = (int)arg;
-	char buf[1];
-
 	logger("Container start");
 
-	read(socketfd, buf, 1);
-	close(socketfd);
+	wamr("/home/t4/teawater/hello.wasm");
 
 	logger("Container stop");
 }
 
+int socketfd;
+
 int
 main(int argc, char **argv)
 {
-	int listenfd, socketfd;
+	int listenfd, ret;
 	static struct sockaddr_in serv_addr;
 	int sandbox_running = 0;
-	int container_id = 0;
+	int container_count = 0;
+	char buf[1025];
 
 #if 0
     if (argc != 2) {
@@ -124,30 +135,61 @@ main(int argc, char **argv)
 	}
 
 	printf("To Infinity and Beyond!\n");
-	while(1) {
-		int ret;
 
-		logger("wait client");
-		socketfd = accept(listenfd, NULL, NULL);
-		if (socketfd < 0) {
-			logger("accept failed");
-			return -1;
-		}
-		logger("new client");
-
-		if (!sandbox_running) {
-			ret = pthread_create(&sandbox_thread, NULL, sandbox_func, (void *)socketfd);
-			sandbox_running = 1;
-		} else {
-			ret = pthread_create(&container_threads[container_id], NULL, container_func, (void *)socketfd);
-			container_id ++;
-			if (container_id >= 128)
-				break;
-		}
-		if (ret) {
-			printf("pthread_create failed error =  %d\n", ret);
-			return ret;
-		}
-
+	logger("wait kata");
+	socketfd = accept(listenfd, NULL, NULL);
+	if (socketfd < 0) {
+		logger("accept failed");
+		return -1;
 	}
+	logger("new client");
+
+	while(1) {
+		int buf_len;
+
+		buf_len = lwip_recv(socketfd & ~LWIP_FD_BIT, &buf, 1024, MSG_DONTWAIT);
+		if (buf_len == 0) {
+			logger("read close");
+			break;
+		}
+		if (buf_len == -1) {
+			if (errno != EWOULDBLOCK) {
+				sleep(1);
+				continue;
+			}
+			logger("read fail %d", errno);
+			break;
+		}
+
+#if 0
+		buf_len = read(socketfd, buf, 1024);
+		if (buf_len <= 0) {
+			logger("read fail %d", buf_len);
+			break;
+		}
+#endif
+		buf[buf_len] = '\0';
+		logger("read got %s", buf);
+
+		switch(buf[0]) {
+		case 'c':
+			logger("new container");
+			ret = pthread_create(&container_threads[container_count], NULL, container_func, NULL);
+			if (ret < 0) {
+				logger("pthread_create fail %d", ret);
+				continue;
+			}
+			container_count ++;
+			//logger("sleep");
+			//sleep(10);
+			break;
+		default:
+			goto out;
+			break;
+		}
+	}
+
+out:
+	logger("quit");
+	exit(0);
 }
