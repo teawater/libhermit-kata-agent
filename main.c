@@ -15,23 +15,6 @@
 #if 0
 #define LOG_PATH    "/var/log/libhermit-kata-agent.log"
 
-static ssize_t write_all(int fd, const char* buf, size_t len)
-{
-	size_t pos = 0;
-    ssize_t r;
-
-	while (pos < len) {
-		r = write(fd, buf+pos, len-pos);
-		if (r <= 0)
-			goto out;
-        pos += r;
-	}
-    r = len;
-
-out:
-	return r;
-}
-
 
 static void logger(const char *logbuffer)
 {
@@ -54,12 +37,14 @@ static void logger(const char *logbuffer)
 }
 #endif
 
+static pthread_mutex_t logger_mutex;
+
 #define va_list __builtin_va_list
 #define va_start __builtin_va_start
 #define va_arg __builtin_va_arg
 #define va_end __builtin_va_end
 
-static void logger(const char *fmt, ...)
+void logger(const char *fmt, ...)
 {
 	int real_fmt_max = strlen(fmt) + 50;
 	char real_fmt[real_fmt_max];
@@ -69,35 +54,85 @@ static void logger(const char *fmt, ...)
 	strcat(real_fmt, fmt);
 	strcat(real_fmt, "\n");
 	va_start(ap, real_fmt);
+	pthread_mutex_lock(&logger_mutex);
 	vprintf(real_fmt, ap);
+	pthread_mutex_unlock(&logger_mutex);
 	va_end(ap);
 }
 
-int
-os_printf(const char *format, ...)
+static ssize_t write_all(int fd, const char* buf, size_t len)
 {
-    int ret = 0;
-    va_list ap;
+	size_t pos = 0;
+    ssize_t r;
 
-    va_start(ap, format);
-    ret += vprintf(format, ap);
-    va_end(ap);
+	while (pos < len) {
+		r = write(fd, buf+pos, len-pos);
+		if (r <= 0)
+			goto out;
+        pos += r;
+	}
+    r = len;
 
-    return ret;
+out:
+	return r;
 }
 
-pthread_t container_threads[128];
+int socketfd;
+static pthread_mutex_t socketfd_mutex;
 
+pthread_t container_threads[128];
+struct container_struct
+{
+	char *id;
+	char *exec;
+};
+struct container_struct container[128];
+
+__thread struct container_struct *current_c;
 void* container_func(void* arg)
 {
-	logger("Container start");
+	current_c = arg;
+	logger("Container start %s %s", current_c->id, current_c->exec);
 
-	wamr("/home/t4/teawater/hello.wasm");
+	wamr(current_c->exec);
+	#if 0
+	while(1) {
+		logger("Container running");
+		sleep(1);
+	}
+	#endif
 
 	logger("Container stop");
 }
 
-int socketfd;
+#define HEADER_MAX	256
+int netsend(const char *data, size_t len)
+{
+	int buf_max = len + HEADER_MAX;
+	char buf[buf_max];
+	int header_len;
+	int ret;
+
+	strcpy(buf, current_c->id);
+	strcat(buf, ":");
+	header_len = strlen(buf);
+	if (header_len >= HEADER_MAX) {
+		logger("netsend header %s is too big", buf);
+		return -1;
+	}
+
+	memcpy(buf + header_len, data, len);
+	buf[header_len + len] = '\0';
+	//logger(buf);
+
+	pthread_mutex_lock(&socketfd_mutex);
+	ret = write_all(socketfd, buf, header_len + len);
+	pthread_mutex_unlock(&socketfd_mutex);
+	if (ret >= header_len)
+		ret = len;
+
+	return ret;
+}
 
 int
 main(int argc, char **argv)
@@ -116,6 +151,8 @@ main(int argc, char **argv)
 
     return wamr(argv[1]);
 #endif
+	pthread_mutex_init(&logger_mutex, 0);
+	pthread_mutex_init(&socketfd_mutex, 0);
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (listenfd < 0) {
@@ -147,7 +184,10 @@ main(int argc, char **argv)
 	while(1) {
 		int buf_len;
 
+		//logger("lwip_recv");
+		pthread_mutex_lock(&socketfd_mutex);
 		buf_len = lwip_recv(socketfd & ~LWIP_FD_BIT, &buf, 1024, MSG_DONTWAIT);
+		pthread_mutex_unlock(&socketfd_mutex);
 		if (buf_len == 0) {
 			logger("read close");
 			break;
@@ -161,27 +201,31 @@ main(int argc, char **argv)
 			break;
 		}
 
-#if 0
-		buf_len = read(socketfd, buf, 1024);
-		if (buf_len <= 0) {
-			logger("read fail %d", buf_len);
-			break;
-		}
-#endif
 		buf[buf_len] = '\0';
 		logger("read got %s", buf);
 
 		switch(buf[0]) {
-		case 'c':
-			logger("new container");
-			ret = pthread_create(&container_threads[container_count], NULL, container_func, NULL);
+		case 'c': {
+			char *id_tail = strchr(buf + 1, ',');
+			if (id_tail == NULL) {
+				logger("format is not right");
+				continue;
+			}
+			id_tail[0] = '\0';
+			container[container_count].id = strdup(buf + 1);
+			container[container_count].exec = strdup(id_tail + 1);
+			
+			logger("new container %s %s",
+				   container[container_count].id,
+				   container[container_count].exec);
+			ret = pthread_create(&container_threads[container_count], NULL, container_func,
+								 &container[container_count]);
 			if (ret < 0) {
 				logger("pthread_create fail %d", ret);
 				continue;
 			}
 			container_count ++;
-			//logger("sleep");
-			//sleep(10);
+		}
 			break;
 		default:
 			goto out;

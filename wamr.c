@@ -23,12 +23,12 @@ read_file_to_buffer(const char *filename, uint32 *ret_size)
     struct stat stat_buf;
 
     if (!filename || !ret_size) {
-        printf("Read file to buffer failed: invalid filename or ret size.\n");
+        logger("Read file to buffer failed: invalid filename or ret size.");
         return NULL;
     }
 
     if ((file = open(filename, O_RDONLY, 0)) == -1) {
-        printf("Read file to buffer failed: open file %s failed.\n",
+        logger("Read file to buffer failed: open file %s failed.",
                filename);
         return NULL;
     }
@@ -50,7 +50,7 @@ read_file_to_buffer(const char *filename, uint32 *ret_size)
     file_size = 1 << 20;
 
     if (!(buffer = BH_MALLOC(file_size))) {
-        printf("Read file to buffer failed: alloc memory failed.\n");
+        logger("Read file to buffer failed: alloc memory failed.");
         close(file);
         return NULL;
     }
@@ -59,12 +59,12 @@ read_file_to_buffer(const char *filename, uint32 *ret_size)
     close(file);
 
     if (read_size == file_size) {
-        printf("Read file to buffer failed: read file content failed. %d\n", read_size);
+        logger("Read file to buffer failed: read file content failed. %d", read_size);
         BH_FREE(buffer);
         return NULL;
     }
 
-    printf("Read file, total size: %u\n", read_size);
+    logger("Read file, total size: %u", read_size);
 
     *ret_size = read_size;
     return buffer;
@@ -77,42 +77,42 @@ int wamr(char *file)
     uint32 wasm_file_size;
     wasm_module_t wasm_module = NULL;
     wasm_module_inst_t wasm_module_inst = NULL;
-    uint32 stack_size = 16 * 1024, heap_size = 16 * 1024;
+    uint32 stack_size = 256 << 20, heap_size = 256 << 20;
 
     const char *exception;
 
     if (!wasm_runtime_init()) {
-        printf("wasm_runtime_init failed\n");
+        logger("wasm_runtime_init failed");
         goto error;
     }
 
     if (!(wasm_file_buf =
               (uint8 *)read_file_to_buffer(file, &wasm_file_size)))
     {
-        printf("bh_read_file_to_buffer failed\n");
+        logger("bh_read_file_to_buffer failed");
         goto error;
     }
 
     if (!(wasm_module = wasm_runtime_load(wasm_file_buf, wasm_file_size,
                                           error_buf, sizeof(error_buf)))) {
-        printf("wasm_runtime_load failed %s\n", error_buf);
+        logger("wasm_runtime_load failed %s", error_buf);
         goto error;
     }
 
     if (!(wasm_module_inst =
             wasm_runtime_instantiate(wasm_module, stack_size, heap_size,
                                      error_buf, sizeof(error_buf)))) {
-        printf("wasm_runtime_instantiate failed %s\n", error_buf);
+        logger("wasm_runtime_instantiate failed %s", error_buf);
         goto error;
     }
 
     wasm_application_execute_main(wasm_module_inst, 0, NULL);
     if ((exception = wasm_runtime_get_exception(wasm_module_inst)))
-        printf("%s\n", exception);
+        logger("%s", exception);
 
     wasm_runtime_deinstantiate(wasm_module_inst);
 
-    printf("bye!\n");
+    logger("wamr quit");
 
 error:
     return 0;
