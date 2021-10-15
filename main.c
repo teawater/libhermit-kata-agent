@@ -84,6 +84,7 @@ pthread_t container_threads[128];
 struct container_struct
 {
 	char *id;
+	int id_size;
 	char *exec;
 };
 struct container_struct container[128];
@@ -113,7 +114,9 @@ int netsend(const char *data, size_t len)
 	int header_len;
 	int ret;
 
-	strcpy(buf, current_c->id);
+	sprintf(buf, "%d", current_c->id_size + 1 + len);
+	strcat(buf, ":");
+	strcat(buf, current_c->id);
 	strcat(buf, ":");
 	header_len = strlen(buf);
 	if (header_len >= HEADER_MAX) {
@@ -122,12 +125,17 @@ int netsend(const char *data, size_t len)
 	}
 
 	memcpy(buf + header_len, data, len);
+
 	buf[header_len + len] = '\0';
-	//logger(buf);
+	logger("netsend send %s", buf);
 
 	pthread_mutex_lock(&socketfd_mutex);
 	ret = write_all(socketfd, buf, header_len + len);
 	pthread_mutex_unlock(&socketfd_mutex);
+
+	//buf[header_len + len] = '\0';
+	//logger("netsend send %s %d", buf, ret);
+
 	if (ret >= header_len)
 		ret = len;
 
@@ -213,6 +221,7 @@ main(int argc, char **argv)
 			}
 			id_tail[0] = '\0';
 			container[container_count].id = strdup(buf + 1);
+			container[container_count].id_size = strlen(container[container_count].id);
 			container[container_count].exec = strdup(id_tail + 1);
 			
 			logger("new container %s %s",
